@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '../types';
 import { supabase } from '../lib/supabase';
-import toast from 'react-hot-toast';
 
 interface AuthContextType {
   user: User | null;
@@ -13,13 +12,9 @@ interface AuthContextType {
 
 interface SignupData {
   role: 'faculty' | 'student' | 'parent';
-  name: string;
-  email?: string;
+  full_name: string;
+  email: string;
   password: string;
-  roll_no?: string;
-  standard?: string;
-  class?: string;
-  linked_student_roll?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,11 +29,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          // Fetch user profile based on role
-          await fetchUserProfile(session.user.id);
+          await fetchUserProfile(session.user.id, session.user.user_metadata?.role);
         }
       } catch (error) {
-        console.error('Error checking auth:', error);
+        console.error('❌ Error checking auth:', error);
       } finally {
         setLoading(false);
       }
@@ -49,7 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session?.user) {
-        await fetchUserProfile(session.user.id);
+        await fetchUserProfile(session.user.id, session.user.user_metadata?.role);
       } else if (event === 'SIGNED_OUT') {
         setUser(null);
       }
@@ -58,44 +52,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchUserProfile = async (userId: string) => {
+  const fetchUserProfile = async (userId: string, role?: string) => {
     try {
-      // Try faculty first
-      const { data: faculty } = await supabase
-        .from('faculty')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      let userData = null;
 
-      if (faculty) {
-        setUser({ ...faculty, role: 'faculty' });
-        return;
+      if (role === 'faculty') {
+        const { data } = await supabase
+          .from('faculty')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        if (data) userData = { ...data, role: 'faculty' };
+      } else if (role === 'student') {
+        const { data } = await supabase
+          .from('students')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        if (data) userData = { ...data, role: 'student' };
+      } else if (role === 'parent') {
+        const { data } = await supabase
+          .from('parents')
+          .select('*')
+          .eq('id', userId)
+          .single();
+        if (data) userData = { ...data, role: 'parent' };
       }
-
-      // Then try users table
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
 
       if (userData) {
         setUser(userData);
-        return;
-      }
-
-      // Then try parents
-      const { data: parent } = await supabase
-        .from('parents')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (parent) {
-        setUser({ ...parent, role: 'parent' });
+        console.log("✅ Success: User profile fetched", userData);
       }
     } catch (error) {
-      console.error('Error fetching user profile:', error);
+      console.error('❌ Error fetching user profile:', error);
     }
   };
 
@@ -107,68 +96,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (error) throw error;
-
-      toast.success('Login successful!');
+      console.log("✅ Success: Login successful", data);
     } catch (error: any) {
-      toast.error(error.message || 'Login failed');
+      console.error("❌ Error:", error);
       throw error;
     }
   };
 
   const signup = async (signupData: SignupData) => {
     try {
+      // Create user in Supabase Auth with metadata
       const { data, error } = await supabase.auth.signUp({
-        email: signupData.email || `${signupData.roll_no || Date.now()}@temp.com`,
+        email: signupData.email,
         password: signupData.password,
+        options: {
+          data: {
+            full_name: signupData.full_name,
+            role: signupData.role
+          }
+        }
       });
 
       if (error) throw error;
+      console.log("✅ Success: Auth user created", data);
 
       if (data.user) {
         // Insert into appropriate table based on role
+        const userData = {
+          id: data.user.id,
+          full_name: signupData.full_name,
+          email: signupData.email,
+          created_at: new Date().toISOString()
+        };
+
+        let insertError;
         if (signupData.role === 'faculty') {
-          await supabase.from('faculty').insert({
-            id: data.user.id,
-            name: signupData.name,
-            email: signupData.email!,
-          });
+          const { error } = await supabase.from('faculty').insert(userData);
+          insertError = error;
         } else if (signupData.role === 'student') {
-          await supabase.from('students').insert({
-            id: data.user.id,
-            roll_no: signupData.roll_no!,
-            name: signupData.name,
-            standard: signupData.standard!,
-            class: signupData.class!,
-          });
-
-          await supabase.from('users').insert({
-            id: data.user.id,
-            role: 'student',
-            name: signupData.name,
-            roll_no: signupData.roll_no!,
-            class: signupData.class!,
-            password_hash: 'hashed', // In real app, hash properly
-          });
+          const { error } = await supabase.from('students').insert(userData);
+          insertError = error;
         } else if (signupData.role === 'parent') {
-          await supabase.from('parents').insert({
-            id: data.user.id,
-            name: signupData.name,
-            linked_student_roll: signupData.linked_student_roll!,
-            password_hash: 'hashed',
-          });
-
-          await supabase.from('users').insert({
-            id: data.user.id,
-            role: 'parent',
-            name: signupData.name,
-            password_hash: 'hashed',
-          });
+          const { error } = await supabase.from('parents').insert(userData);
+          insertError = error;
         }
-      }
 
-      toast.success('Account created successfully!');
+        if (insertError) throw insertError;
+        console.log("✅ Success: User data inserted into table", userData);
+      }
     } catch (error: any) {
-      toast.error(error.message || 'Signup failed');
+      console.error("❌ Error:", error);
       throw error;
     }
   };
@@ -178,9 +155,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUser(null);
-      toast.success('Logged out successfully');
+      console.log("✅ Success: Logged out successfully");
     } catch (error: any) {
-      toast.error(error.message || 'Logout failed');
+      console.error("❌ Error:", error);
     }
   };
 
