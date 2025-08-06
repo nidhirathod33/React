@@ -7,7 +7,8 @@ import { GlassCard } from '../ui/GlassCard';
 import { SegmentedControl } from '../ui/SegmentedControl';
 import { FloatingLabelInput } from '../ui/FloatingLabelInput';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../hooks/useAuth';
+import { SignUpData } from '../../types';
 
 const roleOptions = [
   { value: 'faculty', label: 'Faculty' },
@@ -32,10 +33,11 @@ const signupSchema = yup.object({
 export function AuthForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [selectedRole, setSelectedRole] = useState('faculty');
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
-  const { login, signup } = useAuth();
+  const { signUp, signIn, loading, error } = useAuth();
+
+  console.debug('🔄 AuthForm: Rendering form', { isLogin, selectedRole, loading });
 
   const getSchema = () => {
     return isLogin ? loginSchema : signupSchema;
@@ -49,39 +51,46 @@ export function AuthForm() {
   const formValues = watch();
 
   const onSubmit = async (data: any) => {
-    setLoading(true);
+    console.debug('🔄 AuthForm: Form submitted', { isLogin, data: { ...data, password: '[HIDDEN]' } });
     setMessage('');
+    
     try {
       if (isLogin) {
-        await login(data.email, data.password, selectedRole as any);
-        console.log("✅ Success: Login successful");
+        console.debug('🔄 AuthForm: Attempting sign in');
+        await signIn(data.email, data.password);
+        console.debug('✅ AuthForm: Sign in successful');
         setMessage('Login successful!');
         setMessageType('success');
       } else {
-        await signup({ 
+        console.debug('🔄 AuthForm: Attempting sign up');
+        const signUpData: SignUpData = {
           full_name: data.full_name,
           email: data.email,
           password: data.password,
-          role: selectedRole as any 
-        });
-        console.log("✅ Success: Signup successful");
+          role: selectedRole as 'faculty' | 'student' | 'parent'
+        };
+        await signUp(data.email, data.password, signUpData);
+        console.debug('✅ AuthForm: Sign up successful');
         setMessage('Account created successfully!');
         setMessageType('success');
       }
-    } catch (error: any) {
-      console.error("❌ Error:", error);
-      setMessage(error.message || (isLogin ? 'Login failed' : 'Signup failed'));
+    } catch (err: any) {
+      console.debug('❌ AuthForm: Auth failed', err);
+      setMessage(err.message || (isLogin ? 'Login failed' : 'Signup failed'));
       setMessageType('error');
-    } finally {
-      setLoading(false);
     }
   };
 
   const toggleMode = () => {
+    console.debug('🔄 AuthForm: Toggling mode from', isLogin ? 'login' : 'signup', 'to', !isLogin ? 'login' : 'signup');
     setIsLogin(!isLogin);
     setMessage('');
     reset();
   };
+
+  // Show global auth error if present
+  const displayError = error || message;
+  const displayMessageType = error ? 'error' : messageType;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -98,16 +107,18 @@ export function AuthForm() {
             {isLogin ? 'Sign in to your account' : 'Join our attendance system'}
           </p>
 
-          <div className="mb-6">
-            <label className="block text-white/80 text-sm font-medium mb-3">
-              Select Role
-            </label>
-            <SegmentedControl
-              options={roleOptions}
-              value={selectedRole}
-              onChange={setSelectedRole}
-            />
-          </div>
+          {!isLogin && (
+            <div className="mb-6">
+              <label className="block text-white/80 text-sm font-medium mb-3">
+                Select Role
+              </label>
+              <SegmentedControl
+                options={roleOptions}
+                value={selectedRole}
+                onChange={setSelectedRole}
+              />
+            </div>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
             <AnimatePresence mode="wait">
@@ -171,17 +182,17 @@ export function AuthForm() {
               )}
             </AnimatePresence>
 
-            {message && (
+            {displayError && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`text-center text-sm p-3 rounded-lg ${
-                  messageType === 'success' 
+                  displayMessageType === 'success' 
                     ? 'bg-green-500/20 text-green-100 border border-green-500/30' 
                     : 'bg-red-500/20 text-red-100 border border-red-500/30'
                 }`}
               >
-                {message}
+                {displayError}
               </motion.div>
             )}
 
