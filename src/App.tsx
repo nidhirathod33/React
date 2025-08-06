@@ -1,57 +1,69 @@
 import React from 'react';
 import { Toaster } from 'react-hot-toast';
-import { AnimatedBackground } from './components/ui/AnimatedBackground';
-import { AuthForm } from './components/auth/AuthForm';
+import { AuthProvider, useAuth } from './hooks/useAuth';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import { Navigation } from './components/layout/Navigation';
 import { FacultyDashboard } from './components/faculty/FacultyDashboard';
 import { StudentDashboard } from './components/student/StudentDashboard';
 import { ParentDashboard } from './components/parent/ParentDashboard';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { LoadingSpinner } from './components/ui/LoadingSpinner';
 
-function AppContent() {
-  const { user, loading } = useAuth();
+function DashboardRouter() {
+  const { profile, isAuthenticated } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <AnimatedBackground />
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+  console.debug('🔄 DashboardRouter: Routing decision', {
+    isAuthenticated,
+    role: profile?.role,
+    hasProfile: !!profile
+  });
+
+  if (!isAuthenticated || !profile) {
+    console.debug('❌ DashboardRouter: Not authenticated or no profile');
+    return null;
   }
 
-  if (!user) {
-    return (
-      <>
-        <AnimatedBackground />
-        <AuthForm />
-      </>
-    );
-  }
+  const renderDashboard = () => {
+    switch (profile.role) {
+      case 'faculty':
+        console.debug('✅ DashboardRouter: Rendering FacultyDashboard');
+        return <FacultyDashboard />;
+      case 'student':
+        console.debug('✅ DashboardRouter: Rendering StudentDashboard');
+        return <StudentDashboard />;
+      case 'parent':
+        console.debug('✅ DashboardRouter: Rendering ParentDashboard');
+        return <ParentDashboard />;
+      default:
+        console.debug('❌ DashboardRouter: Unknown role:', profile.role);
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Unknown Role</h2>
+              <p className="text-gray-600">Role "{profile.role}" is not recognized.</p>
+            </div>
+          </div>
+        );
+    }
+  };
 
-  // Render appropriate dashboard based on user role
-  switch (user.role) {
-    case 'faculty':
-      return <FacultyDashboard />;
-    case 'student':
-      return <StudentDashboard />;
-    case 'parent':
-      return <ParentDashboard />;
-    default:
-      return (
-        <>
-          <AnimatedBackground />
-          <AuthForm />
-        </>
-      );
-  }
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+      <Navigation />
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {renderDashboard()}
+      </main>
+    </div>
+  );
 }
 
 function App() {
+  console.debug('🔄 App: Rendering main app component');
+
   return (
     <AuthProvider>
       <div className="App">
-        <AppContent />
+        <ProtectedRoute>
+          <DashboardRouter />
+        </ProtectedRoute>
         <Toaster
           position="top-right"
           toastOptions={{
