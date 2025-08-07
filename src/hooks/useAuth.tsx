@@ -16,12 +16,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const initializeAuth = async () => {
       try {
+        console.debug('🔄 Auth: Getting initial session...');
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
           console.debug('❌ Auth: Session error:', sessionError);
           throw sessionError;
         }
+
+        console.debug('🔄 Auth: Session result:', { 
+          hasSession: !!session, 
+          userId: session?.user?.id || 'none',
+          userMetadata: session?.user?.user_metadata || 'none'
+        });
 
         if (mounted) {
           if (session?.user) {
@@ -33,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(null);
             setProfile(null);
           }
+          
+          console.debug('🔄 Auth: Setting loading to false');
           setLoading(false);
         }
       } catch (err: any) {
@@ -44,26 +53,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // Initialize auth state
     initializeAuth();
 
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.debug('🔄 Auth: State change event:', event, 'Session:', session?.user?.id || 'none');
       
-      if (!mounted) return;
-
-      if (event === 'SIGNED_IN' && session?.user) {
-        console.debug('✅ Auth: User signed in:', session.user.id);
-        setUser(session.user);
-        setError(null);
-        await fetchUserProfile(session.user);
-      } else if (event === 'SIGNED_OUT') {
-        console.debug('✅ Auth: User signed out');
-        setUser(null);
-        setProfile(null);
-        setError(null);
+      if (!mounted) {
+        console.debug('⚠️ Auth: Component unmounted, ignoring auth change');
+        return;
       }
-      
-      setLoading(false);
+
+      try {
+        if (event === 'SIGNED_IN' && session?.user) {
+          console.debug('✅ Auth: User signed in:', session.user.id);
+          setUser(session.user);
+          setError(null);
+          await fetchUserProfile(session.user);
+        } else if (event === 'SIGNED_OUT') {
+          console.debug('✅ Auth: User signed out');
+          setUser(null);
+          setProfile(null);
+          setError(null);
+        } else if (event === 'TOKEN_REFRESHED' && session?.user) {
+          console.debug('🔄 Auth: Token refreshed for user:', session.user.id);
+          setUser(session.user);
+        }
+        
+        // Always ensure loading is false after handling auth change
+        setLoading(false);
+      } catch (err: any) {
+        console.debug('❌ Auth: Error handling auth state change:', err);
+        setError(err.message);
+        setLoading(false);
+      }
     });
 
     return () => {
@@ -79,8 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const role = authUser.user_metadata?.role;
       
       if (!role) {
-        console.debug('❌ Auth: No role found in user metadata');
+        console.debug('❌ Auth: No role found in user metadata:', authUser.user_metadata);
         setError('No role found in user profile');
+        setProfile(null);
         return;
       }
 
@@ -100,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         default:
           console.debug('❌ Auth: Invalid role:', role);
           setError('Invalid user role');
+          setProfile(null);
           return;
       }
 
@@ -122,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         if (profileError.code === 'PGRST116') {
-          console.debug(`❌ Auth: No rows found for user ${authUser.id} in ${role} table`);
+          console.debug(`❌ Auth: No rows found for user ${authUser.id} in ${tableName} table`);
           setError('No profile found. Please contact admin.');
           setProfile(null);
           return;
@@ -197,7 +223,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const insertData = {
           id: data.user.id,
           name: userData.full_name,
-          full_name: userData.full_name,
           email: userData.email,
           created_at: new Date().toISOString()
         };
@@ -252,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError(err.message);
       throw err;
     } finally {
-      setLoading(false);
+      // Don't set loading to false here - let onAuthStateChange handle it
     }
   };
 
@@ -269,13 +294,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       console.debug('✅ Auth: SignOut successful');
-      setUser(null);
-      setProfile(null);
-      setError(null);
+      // Don't manually set state here - let onAuthStateChange handle it
     } catch (err: any) {
       console.debug('❌ Auth: SignOut failed:', err);
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -290,6 +312,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signOut,
     isAuthenticated: !!user && !!profile
   };
+
+  console.debug('🔄 Auth: Context value:', {
+    hasUser: !!user,
+    hasProfile: !!profile,
+    loading,
+    isAuthenticated: !!user && !!profile,
+    error: error || 'none'
+  });
 
   return (
     <AuthContext.Provider value={value}>

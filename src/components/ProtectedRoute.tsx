@@ -9,27 +9,14 @@ interface ProtectedRouteProps {
 }
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, profile, loading, error, isAuthenticated } = useAuth();
+  const { user, profile, error, isAuthenticated } = useAuth();
 
   console.debug('🔄 ProtectedRoute: Checking auth state', {
     hasUser: !!user,
     hasProfile: !!profile,
-    loading,
     isAuthenticated,
     error
   });
-
-  if (loading) {
-    console.debug('⏳ ProtectedRoute: Still loading auth state');
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <AnimatedBackground />
-        <div className="relative z-10">
-          <LoadingSpinner size="lg" />
-        </div>
-      </div>
-    );
-  }
 
   if (error && !user) {
     console.debug('❌ ProtectedRoute: Auth error without user, showing login form');

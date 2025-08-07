@@ -6,6 +6,8 @@ import { Navigation } from './components/layout/Navigation';
 import { FacultyDashboard } from './components/faculty/FacultyDashboard';
 import { StudentDashboard } from './components/student/StudentDashboard';
 import { ParentDashboard } from './components/parent/ParentDashboard';
+import { AnimatedBackground } from './components/ui/AnimatedBackground';
+import { LoadingSpinner } from './components/ui/LoadingSpinner';
 
 function DashboardRouter() {
   const { profile, isAuthenticated } = useAuth();
@@ -55,15 +57,39 @@ function DashboardRouter() {
   );
 }
 
+function AppContent() {
+  const { loading, error } = useAuth();
+
+  console.debug('🔄 AppContent: Render state', { loading, error });
+
+  if (loading) {
+    console.debug('⏳ AppContent: Still loading auth state');
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <AnimatedBackground />
+        <div className="relative z-10">
+          <LoadingSpinner size="lg" />
+          <p className="text-white mt-4 text-center">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  console.debug('✅ AppContent: Auth loaded, rendering ProtectedRoute');
+  return (
+    <ProtectedRoute>
+      <DashboardRouter />
+    </ProtectedRoute>
+  );
+}
+
 function App() {
   console.debug('🔄 App: Rendering main app component');
 
   return (
     <AuthProvider>
       <div className="App">
-        <ProtectedRoute>
-          <DashboardRouter />
-        </ProtectedRoute>
+        <AppContent />
         <Toaster
           position="top-right"
           toastOptions={{
